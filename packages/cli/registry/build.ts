@@ -58,7 +58,7 @@ const registry = {
       repository,
       license: "MIT",
       license_url: `${repository}/blob/${tag}/LICENSE`,
-      icon: `${download}/${icon}`,
+      icon: `https://raw.githubusercontent.com/Weekendsuperhero-io/opencode/${tag}/packages/cli/registry/icon.svg`,
       distribution: { binary },
     },
   ],

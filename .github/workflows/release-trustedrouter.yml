@@ -242,6 +242,15 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           sha256sum --check SHA256SUMS
+          # ACP clients may refuse redirects when loading an icon.
+          icon=$(jq -er '.agents[0].icon' registry.json)
+          response=$(curl --silent --show-error --fail --max-time 20 --proto '=https' \
+            --output "$RUNNER_TEMP/trustedrouter-icon.svg" --write-out '%{http_code} %{content_type}' -- "$icon")
+          if [[ "$response" != '200 image/svg+xml' && "$response" != '200 image/svg+xml;'* ]]; then
+            echo "Expected the registry icon to return SVG directly, got $response" >&2
+            exit 1
+          fi
+          cmp "$RUNNER_TEMP/trustedrouter-icon.svg" opencode-trustedrouter.svg
           latest=true
           current=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')
           if [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-tr\.[0-9]+$ ]]; then
