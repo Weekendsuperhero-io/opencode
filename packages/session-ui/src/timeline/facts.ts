@@ -222,14 +222,20 @@ function placeFact(tool: Tool, id: string, read: Reads): PlaceFact {
   }
 }
 
-// A script reports the files it changed once it finishes in the foreground; one moved to the background has none.
-// Its metadata is read only then, so a running script's progress reports never reach placement.
+// Whether a script that fails or is stopped keeps the changes it made, which really happened.
+const keepFailedScriptChanges = true
+
+// A script reports the files it changes as it runs and when it ends in the foreground; one moved to the background has
+// none. Placement reads only their count, so progress reports that add no change never move it.
 function scriptChanges(tool: Tool, read: Reads): readonly unknown[] {
-  if (tool.state.status !== "completed") return []
+  const status = tool.state.status
+
+  if (status !== "running" && status !== "completed" && !(status === "error" && keepFailedScriptChanges)) return []
   const metadata = read.metadata()
   const script = Option.getOrUndefined(decodeScript(metadata))
 
-  if (script?.background === true || script?.jobID !== undefined) return []
+  // A running script's background flag says only that it can move there.
+  if (script?.jobID !== undefined || (status !== "running" && script?.background === true)) return []
 
   return Option.getOrElse(decodeFiles(metadata.files), () => [])
 }

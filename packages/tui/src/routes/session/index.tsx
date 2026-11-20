@@ -3750,6 +3750,7 @@ function formatSessionTranscript(
 
 // Files a patch, or a Code Mode script, changed: one block per change with its diff, or its counts when the diff is
 // missing (a deleted file, or a script's change past the size cap). A change without counts shows only its path.
+// Blocks are kept by position, so a running script's stay put as its changes arrive.
 function PatchedFiles(props: { files: ReturnType<typeof parseScriptChanges>; part: ToolProps["part"] }) {
   const ctx = use()
   const theme = useTheme()
@@ -3763,26 +3764,26 @@ function PatchedFiles(props: { files: ReturnType<typeof parseScriptChanges>; par
 
   return (
     <box flexDirection="column" gap={1}>
-      <For each={props.files}>
+      <Index each={props.files}>
         {(file) => (
           <BlockTool
             path={{
-              label: file.type === "add" ? "# Created" : file.type === "delete" ? "# Deleted" : "← Patched",
-              value: pathFormatter.format(file.relativePath),
+              label: file().type === "add" ? "# Created" : file().type === "delete" ? "# Deleted" : "← Patched",
+              value: pathFormatter.format(file().relativePath),
             }}
             part={props.part}
           >
             <Show
-              when={file.type !== "delete" && file.patch}
+              when={file().type !== "delete" && file().patch}
               fallback={
-                <Show when={file.deletions !== undefined || file.additions !== undefined}>
+                <Show when={file().deletions !== undefined || file().additions !== undefined}>
                   <text>
-                    <Show when={(file.additions ?? 0) > 0}>
-                      <span style={{ fg: theme.diff.text.added }}>+{file.additions} </span>
+                    <Show when={(file().additions ?? 0) > 0}>
+                      <span style={{ fg: theme.diff.text.added }}>+{file().additions} </span>
                     </Show>
-                    <Show when={file.type === "delete" || (file.deletions ?? 0) > 0}>
+                    <Show when={file().type === "delete" || (file().deletions ?? 0) > 0}>
                       <span style={{ fg: theme.diff.text.removed }}>
-                        -{file.deletions ?? 0} line{file.deletions !== 1 ? "s" : ""}
+                        -{file().deletions ?? 0} line{file().deletions !== 1 ? "s" : ""}
                       </span>
                     </Show>
                   </text>
@@ -3791,10 +3792,10 @@ function PatchedFiles(props: { files: ReturnType<typeof parseScriptChanges>; par
             >
               <box paddingLeft={1} paddingRight={1}>
                 <PatchDiff
-                  diff={file.patch}
+                  diff={file().patch}
                   hunkFg={theme.diff.text.hunkHeader}
                   view={view()}
-                  filetype={filetype(file.relativePath)}
+                  filetype={filetype(file().relativePath)}
                   syntaxStyle={syntax()}
                   showLineNumbers={true}
                   width="100%"
@@ -3814,7 +3815,7 @@ function PatchedFiles(props: { files: ReturnType<typeof parseScriptChanges>; par
             </Show>
           </BlockTool>
         )}
-      </For>
+      </Index>
     </box>
   )
 }
