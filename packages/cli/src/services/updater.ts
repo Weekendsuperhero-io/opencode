@@ -1,7 +1,13 @@
 import { Global } from "@opencode/util/global"
 import { AppProcess } from "@opencode/util/process"
 import { EffectFlock } from "@opencode/util/effect-flock"
-import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
+import {
+  OPENCODE_ARTIFACT,
+  OPENCODE_CHANNEL,
+  OPENCODE_LOCAL,
+  OPENCODE_TRUSTED_ROUTER,
+  OPENCODE_VERSION,
+} from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Option, Ref, Schema } from "effect"
 import { ChildProcess } from "effect/process"
 import { parse, type ParseError } from "jsonc-parser"
@@ -12,6 +18,8 @@ import { action, parseReleaseVersion, type Policy } from "./updater-action"
 import { errorMessage } from "../util/error"
 
 export const methods = ["curl", "npm", "pnpm", "bun", "yarn", "vp", "brew", "winget"] as const
+export const trustedRouterUpdate =
+  "Download TrustedRouter builds from https://github.com/Weekendsuperhero-io/opencode/releases."
 
 export type Method = (typeof methods)[number]
 export type RunResult = { readonly type: "available" | "installed"; readonly version: string }
@@ -605,7 +613,11 @@ const make = Effect.gen(function* () {
   })
 
   const inspect = Effect.fnUntraced(function* () {
-    if (OPENCODE_LOCAL || ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")) {
+    if (
+      OPENCODE_LOCAL ||
+      OPENCODE_TRUSTED_ROUTER ||
+      ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")
+    ) {
       yield* Effect.logInfo("update check skipped", {
         reason: OPENCODE_LOCAL ? "local-install" : "disabled",
         version: OPENCODE_VERSION,
@@ -648,6 +660,7 @@ const make = Effect.gen(function* () {
   })
 
   const apply = Effect.fn("cli.updater.apply")(function* (version: string) {
+    if (OPENCODE_TRUSTED_ROUTER) return yield* Effect.fail(new Error(trustedRouterUpdate))
     if (yield* install(version)) return
     const error = yield* managed(version)
     return yield* Effect.fail(
@@ -660,6 +673,7 @@ const make = Effect.gen(function* () {
   })
 
   const check = Effect.fn("cli.updater.check")(function* () {
+    if (OPENCODE_TRUSTED_ROUTER) return { type: "unavailable" as const, message: trustedRouterUpdate }
     if (OPENCODE_LOCAL)
       return {
         type: "unavailable" as const,

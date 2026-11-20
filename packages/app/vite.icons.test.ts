@@ -4,7 +4,7 @@ import { build, createServer } from "vite"
 import { icons } from "./vite.icons"
 import manifest from "./manifest.json" with { type: "json" }
 
-test.each(["dev", "beta", "prod", "local"])("bundles %s app icons", async (channel) => {
+test.each(["dev", "beta", "prod", "local", "trustedrouter"])("bundles %s app icons", async (channel) => {
   const result = await build({
     root: import.meta.dirname,
     configFile: false,

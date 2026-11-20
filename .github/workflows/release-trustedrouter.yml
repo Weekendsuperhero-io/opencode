@@ -1,0 +1,262 @@
+name: TrustedRouter release
+
+on:
+  schedule:
+    - cron: '3-58/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: OpenCode release tag (blank uses the newest stable v2 or later tag)
+        type: string
+      revision:
+        description: Fork revision for this upstream tag (1–999)
+        type: string
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trustedrouter-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'Weekendsuperhero-io/opencode' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      upstream_tag: ${{ steps.pending.outputs.upstream_tag }}
+      release_tag: ${{ steps.pending.outputs.release_tag }}
+      commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - name: Find unpublished upstream tag
+        id: pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+          REVISION: ${{ inputs.revision || '1' }}
+        run: |
+          upstream=https://github.com/anomalyco/opencode.git
+          stable='^v([2-9]|[1-9][0-9]+)\.[0-9]+\.[0-9]+$'
+          tag="$REQUESTED_TAG"
+          if [[ -z "$tag" ]]; then
+            tags=$(git ls-remote --refs --tags --sort=-version:refname "$upstream" 'v*')
+            tag=$(awk -v stable="$stable" '{ sub(/^refs\/tags\//, "", $2); if ($2 ~ stable) { print $2; exit } }' <<< "$tags")
+          fi
+          if [[ ! "$tag" =~ $stable || ! "$REVISION" =~ ^[1-9][0-9]{0,2}$ ]]; then
+            echo 'Expected a stable OpenCode v2 or later tag and a fork revision from 1 to 999.' >&2
+            exit 1
+          fi
+
+          release_tag="$tag-tr.$REVISION"
+          published=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName')
+          if grep -Fxq "$release_tag" <<< "$published"; then
+            echo "$release_tag is already published."
+            exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]] && grep -Fq "$tag-tr." <<< "$published"; then
+            echo "A TrustedRouter release based on $tag is already published."
+            exit 0
+          fi
+          {
+            echo "upstream_tag=$tag"
+            echo "release_tag=$release_tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        if: steps.pending.outputs.release_tag != ''
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare tagged source
+        id: source
+        if: steps.pending.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.pending.outputs.upstream_tag }}
+          RELEASE_TAG: ${{ steps.pending.outputs.release_tag }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            git fetch --no-tags https://github.com/anomalyco/opencode.git \
+              '+refs/heads/dev:refs/remotes/upstream/dev' "refs/tags/$UPSTREAM_TAG:refs/upstream/tags/$UPSTREAM_TAG"
+            base=$(git merge-base HEAD refs/remotes/upstream/dev)
+            patch="$RUNNER_TEMP/trustedrouter.patch"
+            git diff --binary "$base" HEAD -- packages/ > "$patch"
+            test -s "$patch"
+            git -c core.hooksPath=/dev/null checkout --detach "refs/upstream/tags/$UPSTREAM_TAG"
+            git apply --3way "$patch"
+            git -c core.hooksPath=/dev/null -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "chore: build TrustedRouter on OpenCode $UPSTREAM_TAG"
+            git tag "$RELEASE_TAG"
+            gh auth setup-git
+            git -c core.hooksPath=/dev/null push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+          commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.commit != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - name: Lint and type-check the release source
+        run: bun run check
+      - name: Build CLI archives
+        working-directory: packages/cli
+        env:
+          OPENCODE_CHANNEL: trustedrouter
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export OPENCODE_VERSION="${RELEASE_TAG#v}"
+          bun_version=$(bun --version)
+          export BUN_COMPILE_RELEASE="bun-v$bun_version"
+          bun run build
+      - name: Verify TrustedRouter is the only provider
+        run: |
+          binary="$GITHUB_WORKSPACE/packages/cli/dist/cli-linux-x64-baseline/bin/opencode"
+          scratch=$(mktemp -d)
+          export HOME="$scratch" XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data"
+          export XDG_STATE_HOME="$scratch/state" XDG_CACHE_HOME="$scratch/cache" OPENCODE_DB="$scratch/opencode.db"
+          export TRUSTEDROUTER_API_KEY=smoke OPENAI_API_KEY=smoke ANTHROPIC_API_KEY=smoke
+          cd "$scratch"
+          models=$("$binary" models --standalone)
+          grep -qx 'trustedrouter/trustedrouter/auto' <<< "$models"
+          cat > opencode.json <<'JSON'
+          {
+            "providers": {
+              "custom": {
+                "env": ["OPENAI_API_KEY"],
+                "package": "@opencode/ai/providers/openai-compatible",
+                "settings": { "baseURL": "http://127.0.0.1:1/v1" },
+                "models": { "test": {} }
+              }
+            },
+            "policies": [
+              { "action": "provider.use", "resource": "*", "effect": "allow" },
+              { "action": "integration.connect", "resource": "*", "effect": "allow" }
+            ]
+          }
+          JSON
+          test "$models" = "$("$binary" models --standalone)"
+          if grep -qv '^trustedrouter/' <<< "$models"; then
+            echo 'The model list contains a provider other than TrustedRouter.' >&2
+            exit 1
+          fi
+          "$binary" auth list --standalone --format json | jq -e 'map(.id) == ["trustedrouter"]'
+          if "$binary" run --standalone --model custom/test 'This model must be unavailable' > run.log 2>&1; then
+            cat run.log >&2
+            exit 1
+          fi
+          grep -iE 'model (unavailable|not found)|cannot find model' run.log
+      - name: Verify the packaged ACP agent advertises terminal sign-in
+        timeout-minutes: 2
+        run: |
+          binary="$GITHUB_WORKSPACE/packages/cli/dist/cli-linux-x64-baseline/bin/opencode"
+          scratch=$(mktemp -d)
+          export HOME="$scratch" XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data"
+          export XDG_STATE_HOME="$scratch/state" XDG_CACHE_HOME="$scratch/cache" OPENCODE_DB="$scratch/opencode.db"
+          unset TRUSTEDROUTER_API_KEY
+          cd "$scratch"
+          python3 - "$binary" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          agent = subprocess.Popen([sys.argv[1], "acp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+          def request(id, method, params):
+              agent.stdin.write(json.dumps(dict(jsonrpc="2.0", id=id, method=method, params=params)) + "\n")
+              agent.stdin.flush()
+              for line in agent.stdout:
+                  message = json.loads(line)
+                  if message.get("id") == id:
+                      return message
+              raise RuntimeError("ACP process closed before responding")
+
+          try:
+              init = request(1, "initialize", {
+                  "protocolVersion": 1,
+                  "clientCapabilities": {"auth": {"terminal": True}},
+              })["result"]
+              assert init["agentInfo"]["name"] == "opencode-trustedrouter", init
+              assert any(method.get("type") == "terminal" and method.get("args") == ["--login"]
+                         for method in init["authMethods"]), init
+              session = request(2, "session/new", {"cwd": os.getcwd(), "mcpServers": []})
+              assert session["error"]["code"] == -32000, session
+          finally:
+              agent.stdin.close()
+              agent.wait(timeout=10)
+          PY
+      - name: Package binaries, checksums, and the ACP registry
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          root="$GITHUB_WORKSPACE"
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir "$assets"
+          cd packages/cli/dist
+          for target in cli-*/; do
+            target=${target%/}
+            name="opencode-trustedrouter-${target#cli-}"
+            cp "$root/LICENSE" "$target/bin/"
+            if [[ "$target" == cli-windows-* ]]; then
+              zip -j "$assets/$name.zip" "$target/bin/opencode.exe" "$target/bin/LICENSE"
+            else
+              tar -czf "$assets/$name.tar.gz" -C "$target/bin" opencode LICENSE
+            fi
+          done
+          cd "$assets"
+          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
+          bun "$root/packages/cli/registry/build.ts" "$RELEASE_TAG" "$assets"
+          sha256sum ./registry.json ./opencode-trustedrouter.svg >> SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trustedrouter-cli
+          path: ${{ runner.temp }}/release-assets/
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: trustedrouter-cli
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ needs.prepare.outputs.upstream_tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          sha256sum --check SHA256SUMS
+          latest=true
+          current=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')
+          if [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-tr\.[0-9]+$ ]]; then
+            newest=$(printf '%s\n' "$RELEASE_TAG" "$current" | sort -V | tail -n 1)
+            if [[ "$newest" != "$RELEASE_TAG" ]]; then latest=false; fi
+          fi
+          if draft=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft); then
+            if [[ "$draft" == false ]]; then
+              echo "$RELEASE_TAG is already published."
+              exit 0
+            fi
+          else
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "OpenCode $RELEASE_TAG for TrustedRouter" \
+              --notes "Based on [OpenCode $UPSTREAM_TAG](https://github.com/anomalyco/opencode/releases/tag/$UPSTREAM_TAG). The standalone [ACP registry](https://github.com/$GITHUB_REPOSITORY/releases/latest/download/registry.json) contains this agent. Run opencode acp --login in a terminal to enter a TrustedRouter API key."
+          fi
+          gh release upload "$RELEASE_TAG" ./*.tar.gz ./*.zip SHA256SUMS registry.json opencode-trustedrouter.svg --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$RELEASE_TAG" --draft=false --latest="$latest" --repo "$GITHUB_REPOSITORY"

@@ -49,7 +49,7 @@ export default defineConfig({
   plugins: [
     basePath,
     desktopPlugin,
-    icons(channel),
+    icons(process.env.OPENCODE_CHANNEL === "trustedrouter" ? "trustedrouter" : channel),
     serviceWorker(fileURLToPath(new URL("./dist", import.meta.url))),
     sentry,
   ] as any,
