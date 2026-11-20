@@ -6,23 +6,25 @@ import { Effect, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Writable } from "node:stream"
 import { ACP } from "../../acp/agent"
-import { Commands } from "../commands"
+import { Commands, Standalone } from "../commands"
 import { Runtime } from "../../framework/runtime"
-import { Standalone } from "../../services/standalone"
+import { start } from "../../services/standalone"
+import { OPENCODE_TRUSTED_ROUTER } from "../../version"
 
 export default Runtime.handler(
   Commands.commands.acp,
   Effect.fn("cli.acp")(function* (input) {
     if (input.login) {
       const login = yield* Effect.promise(() => import("./auth/login"))
-      return yield* login.default({
-        target: Option.none(),
+      const connect = login.default({
+        target: OPENCODE_TRUSTED_ROUTER ? Option.some("trustedrouter") : Option.none(),
         method: Option.none(),
         answer: [],
       })
+      return yield* OPENCODE_TRUSTED_ROUTER ? connect.pipe(Effect.provideService(Standalone, true)) : connect
     }
     process.env.OPENCODE_CLIENT = "acp"
-    const endpoint = yield* Standalone.start()
+    const endpoint = yield* start()
     const client = yield* OpenCode.make({ baseUrl: endpoint.url }).pipe(
       Effect.provideServiceEffect(
         HttpClient.HttpClient,

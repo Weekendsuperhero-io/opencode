@@ -1,6 +1,6 @@
 import { Service, type Endpoint, type EnsureOptions } from "@opencode/client/effect/service"
 import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client/promise"
-import { OPENCODE_VERSION } from "../version"
+import { OPENCODE_TRUSTED_ROUTER, OPENCODE_VERSION } from "../version"
 import { Effect, Option, Redacted } from "effect"
 import { Server as ServerFlag, Standalone as StandaloneFlag } from "../commands/commands"
 import { Env } from "../env"
@@ -42,6 +42,8 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
       try: () => client.server.info({ signal: AbortSignal.timeout(5_000) }),
       catch: (cause) => connectError(endpoint, cause),
     })
+    if (OPENCODE_TRUSTED_ROUTER && !/^\d+\.\d+\.\d+-tr\.\d+$/.test(health.version))
+      return yield* Effect.fail(new Error("This build requires a TrustedRouter OpenCode server"))
     if (health.version !== OPENCODE_VERSION)
       process.stderr.write(
         `Warning: Server at ${endpoint.url} has version ${health.version}; this client is ${OPENCODE_VERSION}. Continuing anyway.\n`,

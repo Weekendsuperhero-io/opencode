@@ -26,3 +26,4 @@ export {
   highlights as OPENCODE_HIGHLIGHTS,
 }
 export const OPENCODE_LOCAL = channel === "local"
+export const OPENCODE_TRUSTED_ROUTER = channel === "trustedrouter"

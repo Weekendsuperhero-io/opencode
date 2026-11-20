@@ -25,7 +25,7 @@ const sentry =
 export default defineConfig({
   plugins: [
     desktopPlugin,
-    icons(channel),
+    icons(process.env.OPENCODE_CHANNEL === "trustedrouter" ? "trustedrouter" : channel),
     serviceWorker(fileURLToPath(new URL("./dist", import.meta.url))),
     sentry,
   ] as any,
