@@ -144,7 +144,7 @@ export function make(input: {
         authMethods: [authMethod],
         _meta: { steering: { supported: true } },
         agentInfo: OPENCODE_TRUSTED_ROUTER
-          ? { name: "opencode-trustedrouter", title: "OpenCode for TrustedRouter", version: OPENCODE_VERSION }
+          ? { name: "opencode-trustedrouter", title: "TrustedRouter x OpenCode", version: OPENCODE_VERSION }
           : { name: "OpenCode", version: OPENCODE_VERSION },
       }
     }),

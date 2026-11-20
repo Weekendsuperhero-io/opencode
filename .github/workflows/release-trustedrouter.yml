@@ -190,6 +190,7 @@ jobs:
                   "clientCapabilities": {"auth": {"terminal": True}},
               })["result"]
               assert init["agentInfo"]["name"] == "opencode-trustedrouter", init
+              assert init["agentInfo"]["title"] == "TrustedRouter x OpenCode", init
               assert any(method.get("type") == "terminal" and method.get("args") == ["--login"]
                          for method in init["authMethods"]), init
               session = request(2, "session/new", {"cwd": os.getcwd(), "mcpServers": []})
@@ -264,7 +265,7 @@ jobs:
             fi
           else
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
-              --title "OpenCode $RELEASE_TAG for TrustedRouter" \
+              --title "TrustedRouter x OpenCode $RELEASE_TAG" \
               --notes "Based on [OpenCode $UPSTREAM_TAG](https://github.com/anomalyco/opencode/releases/tag/$UPSTREAM_TAG). The standalone [ACP registry](https://github.com/$GITHUB_REPOSITORY/releases/latest/download/registry.json) contains this agent. Run opencode acp --login in a terminal to enter a TrustedRouter API key."
           fi
           gh release upload "$RELEASE_TAG" ./*.tar.gz ./*.zip SHA256SUMS registry.json opencode-trustedrouter.svg --clobber --repo "$GITHUB_REPOSITORY"

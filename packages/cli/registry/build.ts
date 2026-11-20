@@ -52,7 +52,7 @@ const registry = {
   agents: [
     {
       id: "opencode-trustedrouter",
-      name: "OpenCode for TrustedRouter",
+      name: "TrustedRouter x OpenCode",
       version: `${version[1]}.${patch}`,
       description: "The OpenCode coding agent with TrustedRouter as its only model provider.",
       repository,
