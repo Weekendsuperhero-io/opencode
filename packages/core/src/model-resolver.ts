@@ -22,6 +22,7 @@ import { Capabilities, Compatibility, ID, Info, Model, Ref, VariantID } from "./
 import type { RuntimeInfo } from "./model.js"
 import { Npm } from "@opencode/util/npm"
 import { Provider } from "./provider.js"
+import { TrustedRouter } from "./trusted-router.js"
 
 export class VariantUnavailableError extends Schema.TaggedError<VariantUnavailableError>()(
   "SessionRunnerModel.VariantUnavailableError",
@@ -231,7 +232,7 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
   credential?: Credential.Value,
   dependencies?: Dependencies,
 ) {
-  if (Provider.isAISDK(model.package)) {
+  if (!TrustedRouter.enabled && Provider.isAISDK(model.package)) {
     const resolved = prepareRuntimeModel(model)
     const loadAISDK = dependencies?.loadAISDK
     if (!loadAISDK) return yield* unsupported(resolved)
@@ -291,7 +292,18 @@ const loadCatalogPackage = Effect.fn("ModelResolver.loadCatalogPackage")(functio
   credential?: Credential.Value,
   dependencies?: Dependencies,
 ) {
-  const resolved = prepareRuntimeModel(model)
+  if (TrustedRouter.enabled && model.providerID !== TrustedRouter.id) return yield* unsupported(model)
+  // Apply the built-in route after provider, model and variant settings have been merged.
+  const resolved = prepareRuntimeModel(
+    TrustedRouter.enabled
+      ? {
+          ...model,
+          package: TrustedRouter.packageName,
+          canonical: undefined,
+          settings: { ...model.settings, baseURL: TrustedRouter.baseURL },
+        }
+      : model,
+  )
   const configured = resolved.settings ?? {}
   const specifier = Provider.packageName(resolved.package)
   if (!specifier || Provider.isAISDK(specifier)) return yield* unsupported(resolved)
@@ -483,7 +495,9 @@ export const layer = Layer.effect(
     const prepare = Effect.fn("ModelResolver.prepare")(function* (selected: Info, variant?: VariantID) {
       const provider = yield* providers.get(selected.providerID)
       const connection = yield* integrations.connection.active(
-        provider?.integrationID ?? Integration.ID.make(selected.providerID),
+        TrustedRouter.enabled
+          ? Integration.ID.make(TrustedRouter.id)
+          : (provider?.integrationID ?? Integration.ID.make(selected.providerID)),
       )
       const credential = connection ? yield* integrations.connection.resolve(connection) : undefined
       const selectedVariant = yield* withVariant(selected, variant)

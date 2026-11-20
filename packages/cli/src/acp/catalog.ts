@@ -1,9 +1,11 @@
 import type { OpenCodeClient, OpenCodeEvent } from "@opencode/client/effect"
 import type { Agent } from "@opencode/schema/agent"
 import type { Command } from "@opencode/schema/command"
+import { Integration } from "@opencode/schema/integration"
 import type { Model } from "@opencode/schema/model"
 import { FSUtil } from "@opencode/util/fs-util"
-import { Cause, Deferred, Effect, Exit, Schedule, Semaphore, Stream, SubscriptionRef } from "effect"
+import { Cause, Deferred, Effect, Exit, Option, Schedule, Semaphore, Stream, SubscriptionRef } from "effect"
+import { OPENCODE_TRUSTED_ROUTER } from "../version"
 import { ACPError } from "./error"
 
 export const builtinCommands = new Map([
@@ -151,7 +153,16 @@ const read = Effect.fnUntraced(function* (client: OpenCodeClient, cwd: string) {
   const preferred = defaultResult.data
   // The parallel default read can name a model missing from this list.
   const defaultModel = preferred ? findModel(models, preferred) : models[0]
-  if (!defaultModel) return yield* new ACPError.CatalogNotReadyError({ reason: "models" })
+  if (!defaultModel) {
+    if (OPENCODE_TRUSTED_ROUTER && models.length === 0) {
+      const integration = yield* client.integration
+        .get({ integrationID: Integration.ID.make("trustedrouter"), location })
+        .pipe(Effect.option)
+      if (Option.isSome(integration) && integration.value.data.connections.length === 0)
+        return yield* new ACPError.AuthRequiredError()
+    }
+    return yield* new ACPError.CatalogNotReadyError({ reason: "models" })
+  }
   const agents = agentResult.data.filter((agent) => agent.mode !== "subagent" && !agent.hidden)
   // Core lists its resolved default agent first, the same one a new session runs.
   const defaultAgent = agents[0]

@@ -8,6 +8,7 @@ import { State } from "./state.js"
 import { Location } from "./location.js"
 import { freeze } from "immer"
 import { AISDKNative } from "./aisdk-native.js"
+import { TrustedRouter } from "./trusted-router.js"
 
 export const ID = Model.ID
 export type ID = typeof ID.Type
@@ -303,7 +304,12 @@ const layer = Layer.effect(
         const value = yield* read()
         const requested = value.data.defaultModel
         const model = requested && value.byProvider.get(requested.providerID)?.get(requested.modelID)
-        return model?.enabled ? model : value.available.find(supportsText)
+        if (model?.enabled) return model
+        if (TrustedRouter.enabled) {
+          const route = value.byProvider.get(Provider.ID.make(TrustedRouter.id))?.get(ID.make(TrustedRouter.model))
+          if (route?.enabled) return route
+        }
+        return value.available.find(supportsText)
       }),
       small: Effect.fn("Model.small")(function* (providerID) {
         const value = yield* read()

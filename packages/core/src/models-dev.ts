@@ -16,6 +16,7 @@ import { AISDKNative } from "./aisdk-native.js"
 import { Provider } from "./provider.js"
 import { Variant } from "./variant.js"
 import { KV } from "./kv.js"
+import { TrustedRouter } from "./trusted-router.js"
 import snapshotText from "./models-dev/snapshot.txt" with { type: "text" }
 import { isV1, toV2 } from "./models-dev/v1.js"
 
@@ -542,6 +543,15 @@ export const layer = (options?: Options) =>
   Layer.effect(
     Service,
     Effect.gen(function* () {
+      if (TrustedRouter.enabled)
+        return Service.of({
+          get: (recommended = false) =>
+            bundledSnapshot(recommended).pipe(
+              Effect.map((providers) => providers.filter((provider) => provider.info.id === TrustedRouter.id)),
+              Effect.orDie,
+            ),
+          refresh: () => Effect.void,
+        })
       const fs = yield* FSUtil.Service
       const bus = yield* Bus.Service
       const app = yield* App.Service
