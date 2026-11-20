@@ -1,5 +1,6 @@
 import { RequestError } from "@agentclientprotocol/sdk"
 import { Schema } from "effect"
+import { OPENCODE_TRUSTED_ROUTER } from "../version"
 
 export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()("ACPSessionNotFoundError", {
   sessionId: Schema.String,
@@ -67,7 +68,7 @@ export class CatalogLoadError extends Schema.TaggedError<CatalogLoadError>()("AC
   cause: Schema.Defect(),
 }) {}
 
-export type CatalogError = CatalogNotReadyError | CatalogLoadError
+export type CatalogError = CatalogNotReadyError | CatalogLoadError | AuthRequiredError
 
 export type Error =
   | SessionNotFoundError
@@ -111,7 +112,12 @@ export function toRequestError(error: Error): RequestError {
         `additional directory must be an absolute path without glob characters: ${error.directory}`,
       )
     case "ACPAuthRequiredError":
-      return RequestError.authRequired({}, "provider authentication required")
+      return RequestError.authRequired(
+        {},
+        OPENCODE_TRUSTED_ROUTER
+          ? "Connect TrustedRouter with `opencode acp --login`"
+          : "provider authentication required",
+      )
     case "ACPUnknownAuthMethodError":
       return RequestError.invalidParams({ methodId: error.methodId }, `unknown auth method: ${error.methodId}`)
     case "ACPInvalidRequestError":
