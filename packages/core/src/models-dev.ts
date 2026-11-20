@@ -546,15 +546,18 @@ export const layer = (options?: Options) =>
   Layer.effect(
     Service,
     Effect.gen(function* () {
-      if (TrustedRouter.enabled)
+      if (TrustedRouter.enabled) {
+        const snapshot = yield* Effect.cached(
+          decodeSnapshot(snapshotText).pipe(
+            Effect.map((providers) => providers.filter((provider) => provider.info.id === TrustedRouter.id)),
+            Effect.orDie,
+          ),
+        )
         return Service.of({
-          get: (recommended = false) =>
-            bundledSnapshot(recommended).pipe(
-              Effect.map((providers) => providers.filter((provider) => provider.info.id === TrustedRouter.id)),
-              Effect.orDie,
-            ),
+          get: () => snapshot,
           refresh: () => Effect.void,
         })
+      }
       const fs = yield* FSUtil.Service
       const bus = yield* Bus.Service
       const app = yield* App.Service
