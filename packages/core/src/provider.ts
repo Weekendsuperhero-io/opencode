@@ -16,6 +16,7 @@ import { Credential } from "@opencode/schema/credential"
 import { Location } from "./location.js"
 import { freeze } from "immer"
 import { AISDKNative } from "./aisdk-native.js"
+import { TrustedRouter } from "./trusted-router.js"
 
 export { AISDK_PREFIX, aisdk, isAISDK, mergeHeaders, mergeOverlay, packageName } from "./aisdk-native.js"
 
@@ -399,6 +400,7 @@ const layer = Layer.effect(
           list: () => Array.from(records.values()),
           get: (id) => records.get(id),
           add: (definition) => {
+            if (TrustedRouter.enabled && definition.info.id !== TrustedRouter.id) return
             records.set(definition.info.id, {
               provider: structuredClone(definition.info) as MutableInfo,
               models: index(definition.info.id, definition.models),
@@ -406,6 +408,7 @@ const layer = Layer.effect(
             })
           },
           update: (id, update) => {
+            if (TrustedRouter.enabled && id !== TrustedRouter.id) return
             const record = entry(id)
             update(record.provider)
             record.provider.id = id
@@ -421,9 +424,11 @@ const layer = Layer.effect(
           },
           models: {
             set: (id, values) => {
+              if (TrustedRouter.enabled && id !== TrustedRouter.id) return
               entry(id).models = index(id, values)
             },
             update: (providerID, modelID, update) => {
+              if (TrustedRouter.enabled && providerID !== TrustedRouter.id) return
               const record = entry(providerID)
               const target = writable(providerID)
               const current = target.get(modelID)

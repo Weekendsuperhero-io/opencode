@@ -5,10 +5,21 @@ import { ConfigIntegration } from "./config/integration.js"
 import { Wildcard } from "./util/wildcard.js"
 import { ConfigPolicy } from "@opencode/schema/config/policy"
 import type { Credential } from "./credential.js"
+import { TrustedRouter } from "./trusted-router.js"
+
+const connectPolicy = [
+  { action: "integration.connect", resource: "*", effect: "deny", message: "This build uses TrustedRouter" },
+  {
+    action: "integration.connect",
+    resource: TrustedRouter.id,
+    effect: "allow",
+    message: "This build uses TrustedRouter",
+  },
+] as const
 
 /** Every policy statement in config, earliest-loaded first so it wins, each with the message a denial shows. */
 export function statements(entries: readonly Entry[]) {
-  return entries
+  const configured = entries
     .filter((entry): entry is Document => entry.type === "document")
     .toReversed()
     .flatMap((entry) =>
@@ -19,6 +30,7 @@ export function statements(entries: readonly Entry[]) {
           entry instanceof ConfigIntegration.Document ? blocked(entry.organization) : "Blocked by configuration policy",
       })),
     )
+  return TrustedRouter.enabled ? [...configured, ...connectPolicy] : configured
 }
 
 function blocked(organization: string | undefined) {

@@ -40,6 +40,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
     provider.id === "opencode" ? language.t("provider.connect.opencode.name") : provider.name
 
   const freeModels = createMemo(() => model.list().filter(isFreeModel))
+  const providerOrder = [...featuredProviders, "trustedrouter"]
 
   const openProviders = (provider?: string) => {
     void import("@/providers/connect/dialog").then((x) => {
@@ -151,8 +152,8 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
                   <For
                     each={integrations
                       .list()
-                      .filter((provider) => featuredProviders.includes(provider.id))
-                      .sort((a, b) => featuredProviders.indexOf(a.id) - featuredProviders.indexOf(b.id))}
+                      .filter((provider) => providerOrder.includes(provider.id))
+                      .sort((a, b) => providerOrder.indexOf(a.id) - providerOrder.indexOf(b.id))}
                   >
                     {(provider) => (
                       <button

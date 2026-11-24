@@ -33,7 +33,7 @@ import type {
   SetSessionModeRequest,
   SetSessionModeResponse,
 } from "@agentclientprotocol/sdk"
-import { OPENCODE_VERSION } from "../version"
+import { OPENCODE_TRUSTED_ROUTER, OPENCODE_VERSION } from "../version"
 import { ACPCapabilities, type Capabilities } from "./capabilities"
 import type { ACPCatalog } from "./catalog"
 import { ACPClient } from "./client"
@@ -120,8 +120,10 @@ export function make(input: {
     initialize: Effect.fnUntraced(function* (params) {
       yield* Ref.set(input.capabilities, ACPCapabilities.parse(params.clientCapabilities))
       const authMethod: AuthMethod = {
-        description: "Run `opencode auth login` in the terminal",
-        name: "Login with opencode",
+        description: OPENCODE_TRUSTED_ROUTER
+          ? "Enter your TrustedRouter API key in a terminal. You can also run `opencode acp --login` manually."
+          : "Run `opencode auth login` in the terminal",
+        name: OPENCODE_TRUSTED_ROUTER ? "Sign in to TrustedRouter" : "Login with opencode",
         id: AuthMethodID,
         ...(params.clientCapabilities?.auth?.terminal ? { type: "terminal" as const, args: ["--login"] } : {}),
       }
@@ -141,7 +143,9 @@ export function make(input: {
         },
         authMethods: [authMethod],
         _meta: { steering: { supported: true } },
-        agentInfo: { name: "OpenCode", version: OPENCODE_VERSION },
+        agentInfo: OPENCODE_TRUSTED_ROUTER
+          ? { name: "opencode-trustedrouter", title: "TrustedRouter x OpenCode", version: OPENCODE_VERSION }
+          : { name: "OpenCode", version: OPENCODE_VERSION },
       }
     }),
     authenticate: Effect.fnUntraced(function* (params) {
